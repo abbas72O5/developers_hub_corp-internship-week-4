@@ -2,6 +2,9 @@ const express = require('express');
 const router = express.Router();
 const User = require('../models/User');
 const validator = require('validator');
+const jwt = require('jsonwebtoken');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
 function escapeHtml(value = '') {
     return String(value)
@@ -80,8 +83,19 @@ router.post('/signup', async (req, res) => {
     try {
         const { email, password } = req.body;
 
+        // Validate inputs
         if (!email || !password) {
             return res.status(400).send(renderPage('Sign Up', '<h1>Create account</h1><p class="error">Email and password are required.</p><p><a href="/signup">Go back</a></p>'));
+        }
+
+        // Validate email format
+        if (!validator.isEmail(email)) {
+            return res.status(400).send(renderPage('Sign Up', '<h1>Create account</h1><p class="error">Invalid email format.</p><p><a href="/signup">Go back</a></p>'));
+        }
+
+        // Validate password strength
+        if (password.length < 6) {
+            return res.status(400).send(renderPage('Sign Up', '<h1>Create account</h1><p class="error">Password must be at least 6 characters long.</p><p><a href="/signup">Go back</a></p>'));
         }
 
         const existingUser = await User.findOne({ email });
@@ -93,7 +107,12 @@ router.post('/signup', async (req, res) => {
         const user = new User({ email, password });
         await user.save();
 
+        // Generate JWT token
+        const token = jwt.sign({ id: user._id }, JWT_SECRET);
+
         req.session.userId = user._id.toString();
+        req.session.token = token;
+        
         res.redirect('/profile');
     } catch (error) {
         res.status(500).send(renderPage('Sign Up', `<h1>Create account</h1><p class="error">${escapeHtml(error.message)}</p><p><a href="/signup">Try again</a></p>`));
@@ -122,13 +141,28 @@ router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
 
-        const user = await User.findOne({ email, password });
+        // Validate inputs
+        if (!email || !password) {
+            return res.status(400).send(renderPage('Log In', '<h1>Log in</h1><p class="error">Email and password are required.</p><p><a href="/login">Try again</a></p>'));
+        }
 
-        if (!user) {
+        // Validate email format
+        if (!validator.isEmail(email)) {
+            return res.status(400).send(renderPage('Log In', '<h1>Log in</h1><p class="error">Invalid email format.</p><p><a href="/login">Try again</a></p>'));
+        }
+
+        const user = await User.findOne({ email });
+
+        if (!user || !(await user.comparePassword(password))) {
             return res.status(401).send(renderPage('Log In', '<h1>Log in</h1><p class="error">Invalid email or password.</p><p><a href="/login">Try again</a></p>'));
         }
 
+        // Generate JWT token
+        const token = jwt.sign({ id: user._id }, JWT_SECRET);
+
         req.session.userId = user._id.toString();
+        req.session.token = token;
+        
         res.redirect('/profile');
     } catch (error) {
         res.status(500).send(renderPage('Log In', `<h1>Log in</h1><p class="error">${escapeHtml(error.message)}</p><p><a href="/login">Try again</a></p>`));
@@ -151,13 +185,12 @@ router.get('/profile', requireAuth, async (req, res) => {
             <h1>User profile</h1>
             <p class="muted">View and update the current account.</p>
             <p><strong>Email:</strong> <code>${escapeHtml(user.email)}</code></p>
-            <p><strong>Password:</strong> <code>${escapeHtml(user.password)}</code></p>
             <form method="POST" action="/profile">
                 <label for="email">Email</label>
                 <input id="email" name="email" type="email" value="${escapeHtml(user.email)}" required>
 
-                <label for="password">Password</label>
-                <input id="password" name="password" type="text" value="${escapeHtml(user.password)}" required>
+                <label for="password">New Password (leave blank to keep current)</label>
+                <input id="password" name="password" type="password">
 
                 <button type="submit">Update profile</button>
             </form>
@@ -179,8 +212,30 @@ router.post('/profile', requireAuth, async (req, res) => {
             return res.redirect('/login');
         }
 
-        user.email = email;
-        user.password = password;
+        // Validate email format
+        if (email && !validator.isEmail(email)) {
+            return res.status(400).send(renderPage('Profile', '<h1>User profile</h1><p class="error">Invalid email format.</p><p><a href="/profile">Go back</a></p>'));
+        }
+
+        // Validate password strength if provided
+        if (password && password.length > 0 && password.length < 6) {
+            return res.status(400).send(renderPage('Profile', '<h1>User profile</h1><p class="error">Password must be at least 6 characters long.</p><p><a href="/profile">Go back</a></p>'));
+        }
+
+        // Check if email is already in use by another user
+        if (email && email !== user.email) {
+            const existingUser = await User.findOne({ email });
+            if (existingUser) {
+                return res.status(409).send(renderPage('Profile', '<h1>User profile</h1><p class="error">This email is already in use.</p><p><a href="/profile">Go back</a></p>'));
+            }
+            user.email = email;
+        }
+
+        // Update password only if provided
+        if (password && password.length > 0) {
+            user.password = password;
+        }
+
         await user.save();
 
         res.redirect('/profile');
