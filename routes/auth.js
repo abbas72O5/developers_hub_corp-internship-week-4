@@ -3,6 +3,7 @@ const router = express.Router();
 const User = require('../models/User');
 const validator = require('validator');
 const jwt = require('jsonwebtoken');
+const logger = require('../logger');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
 
@@ -85,22 +86,26 @@ router.post('/signup', async (req, res) => {
 
         // Validate inputs
         if (!email || !password) {
+            logger.warn(`Signup attempt with missing fields from IP: ${req.ip}`);
             return res.status(400).send(renderPage('Sign Up', '<h1>Create account</h1><p class="error">Email and password are required.</p><p><a href="/signup">Go back</a></p>'));
         }
 
         // Validate email format
         if (!validator.isEmail(email)) {
+            logger.warn(`Signup attempt with invalid email format: ${email} from IP: ${req.ip}`);
             return res.status(400).send(renderPage('Sign Up', '<h1>Create account</h1><p class="error">Invalid email format.</p><p><a href="/signup">Go back</a></p>'));
         }
 
         // Validate password strength
         if (password.length < 6) {
+            logger.warn(`Signup attempt with weak password from email: ${email}`);
             return res.status(400).send(renderPage('Sign Up', '<h1>Create account</h1><p class="error">Password must be at least 6 characters long.</p><p><a href="/signup">Go back</a></p>'));
         }
 
         const existingUser = await User.findOne({ email });
 
         if (existingUser) {
+            logger.warn(`Signup attempt with existing email: ${email}`);
             return res.status(409).send(renderPage('Sign Up', '<h1>Create account</h1><p class="error">An account with that email already exists.</p><p><a href="/signup">Try again</a></p>'));
         }
 
@@ -113,8 +118,10 @@ router.post('/signup', async (req, res) => {
         req.session.userId = user._id.toString();
         req.session.token = token;
         
+        logger.info(`New user registered: ${email}`);
         res.redirect('/profile');
     } catch (error) {
+        logger.error(`Signup error: ${error.message}`);
         res.status(500).send(renderPage('Sign Up', `<h1>Create account</h1><p class="error">${escapeHtml(error.message)}</p><p><a href="/signup">Try again</a></p>`));
     }
 });
@@ -143,17 +150,20 @@ router.post('/login', async (req, res) => {
 
         // Validate inputs
         if (!email || !password) {
+            logger.warn(`Login attempt with missing fields from IP: ${req.ip}`);
             return res.status(400).send(renderPage('Log In', '<h1>Log in</h1><p class="error">Email and password are required.</p><p><a href="/login">Try again</a></p>'));
         }
 
         // Validate email format
         if (!validator.isEmail(email)) {
+            logger.warn(`Login attempt with invalid email format: ${email} from IP: ${req.ip}`);
             return res.status(400).send(renderPage('Log In', '<h1>Log in</h1><p class="error">Invalid email format.</p><p><a href="/login">Try again</a></p>'));
         }
 
         const user = await User.findOne({ email });
 
         if (!user || !(await user.comparePassword(password))) {
+            logger.warn(`Failed login attempt for email: ${email} from IP: ${req.ip}`);
             return res.status(401).send(renderPage('Log In', '<h1>Log in</h1><p class="error">Invalid email or password.</p><p><a href="/login">Try again</a></p>'));
         }
 
@@ -163,8 +173,10 @@ router.post('/login', async (req, res) => {
         req.session.userId = user._id.toString();
         req.session.token = token;
         
+        logger.info(`User logged in: ${email} from IP: ${req.ip}`);
         res.redirect('/profile');
     } catch (error) {
+        logger.error(`Login error: ${error.message}`);
         res.status(500).send(renderPage('Log In', `<h1>Log in</h1><p class="error">${escapeHtml(error.message)}</p><p><a href="/login">Try again</a></p>`));
     }
 });
@@ -214,11 +226,13 @@ router.post('/profile', requireAuth, async (req, res) => {
 
         // Validate email format
         if (email && !validator.isEmail(email)) {
+            logger.warn(`Profile update with invalid email format: ${email} by user: ${user.email}`);
             return res.status(400).send(renderPage('Profile', '<h1>User profile</h1><p class="error">Invalid email format.</p><p><a href="/profile">Go back</a></p>'));
         }
 
         // Validate password strength if provided
         if (password && password.length > 0 && password.length < 6) {
+            logger.warn(`Profile update with weak password by user: ${user.email}`);
             return res.status(400).send(renderPage('Profile', '<h1>User profile</h1><p class="error">Password must be at least 6 characters long.</p><p><a href="/profile">Go back</a></p>'));
         }
 
@@ -226,6 +240,7 @@ router.post('/profile', requireAuth, async (req, res) => {
         if (email && email !== user.email) {
             const existingUser = await User.findOne({ email });
             if (existingUser) {
+                logger.warn(`Profile update attempted with existing email: ${email} by user: ${user.email}`);
                 return res.status(409).send(renderPage('Profile', '<h1>User profile</h1><p class="error">This email is already in use.</p><p><a href="/profile">Go back</a></p>'));
             }
             user.email = email;
@@ -238,13 +253,17 @@ router.post('/profile', requireAuth, async (req, res) => {
 
         await user.save();
 
+        logger.info(`User profile updated: ${email || user.email}`);
         res.redirect('/profile');
     } catch (error) {
+        logger.error(`Profile update error: ${error.message}`);
         res.status(500).send(renderPage('Profile', `<h1>User profile</h1><p class="error">${escapeHtml(error.message)}</p><p><a href="/profile">Go back</a></p>`));
     }
 });
 
 router.post('/logout', (req, res) => {
+    const userId = req.session.userId;
+    logger.info(`User logged out: ${userId}`);
     req.session.destroy(() => {
         res.redirect('/login');
     });

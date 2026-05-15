@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const session = require('express-session');
 const helmet = require('helmet');
 const authRoutes = require('./routes/auth');
+const logger = require('./logger');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -28,13 +29,13 @@ app.use('/', authRoutes);
 async function startServer() {
     try {
         await mongoose.connect(MONGO_URI);
-        console.log('MongoDB connected');
+        logger.info('MongoDB connected successfully');
 
         app.listen(PORT, () => {
-            console.log(`Server running on http://localhost:${PORT}`);
+            logger.info(`Server running on http://localhost:${PORT}`);
         });
     } catch (error) {
-        console.error('MongoDB connection failed:', error.message);
+        logger.error('MongoDB connection failed:', error.message);
         process.exit(1);
     }
 }
