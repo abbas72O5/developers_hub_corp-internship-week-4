@@ -1,171 +1,93 @@
-# DevelopersHub_CyberSecurityIntership_Tasks-Week1-2-3-
-# Internship Report: Secure Web Application Development
+# DevelopersHub_CyberSecurityIntership_Tasks-Week4
 
 **Internship Domain:** Cybersecurity  
 **Project:** User Management System  
-**Duration:** 3 Weeks  
+**Duration:** 1 Week (Week 4) 
+
+# WEEK 4 — Advanced Security Hardening 
+---
+
+## **Introduction**
+This week focused on advanced application hardening: rate limiting, an app-level Intrusion Detection/Lockout system (IDS), API key protection, refined CORS and CSP/HSTS policies, and session hardening. The goal was to raise resilience against automated attacks, abuse, and misconfigured clients while keeping development ergonomics.
 
 ---
 
-## Introduction
+## **Controls Implemented**
 
-During this internship, I worked on a web-based User Management System and improved its security across three phases. The project began as a vulnerable application in Week 1, then security measures were applied in Week 2, and finally penetration testing, logging, and final reporting were completed in Week 3.
+- **Rate Limiting**
+  - Global API limiter: 100 requests / 15 minutes.
+  - Auth limiter: 6 attempts / 15 minutes for `/signup` and `/login`.
+  - Returns `429` with a descriptive message on limit breach.
 
-The objective of the internship was to identify common web application vulnerabilities, apply appropriate fixes, and verify that the system became more secure and resilient against attacks.
+- **App-Level IDS (Account Lockout)**
+  - Fields: `failedLoginAttempts`, `lastFailedLoginAt`, `lockUntil`.
+  - Logic: 5 failed attempts within a 15-minute window lock the account for the remainder of the window.
+  - Login returns `423 Locked` when account is locked; successful login clears failures.
 
----
+- **API Key Protection**
+  - Middleware checks `x-api-key` header or `api_key` query param against `API_KEYS`.
+  - Missing key: `401`; invalid key: `403`; misconfiguration: `503`.
+  - Valid key attached to `req.apiKey` for downstream handlers.
 
-## Week 1: Vulnerable Application Analysis
+- **CORS & CSP/HSTS**
+  - Development: relaxed CORS (localhost allowed) and permissive CSP to ease local testing.
+  - Production: strict whitelist from `CORS_ORIGINS`, strict CSP and HSTS (`maxAge=31536000`, `includeSubDomains`, `preload`).
+  - Use environment variable `NODE_ENV` to toggle behavior.
 
-In the first week, I worked with the initial vulnerable version of the application. The purpose of this stage was to understand the weaknesses in the system before applying any fixes.
+- **Session Hardening**
+  - `express-session` with `httpOnly: true`, `sameSite: 'lax'`, `secure: true` in production.
+  - Custom session name via `SESSION_NAME`.
+  - `trust proxy` enabled in production when behind a reverse proxy.
 
-### Key Observations
-- User inputs were not properly validated.
-- Passwords were not securely protected.
-- Authentication logic was weak.
-- Sensitive data could be exposed in the profile page.
-- Security headers were not configured.
-- Logging and monitoring were not implemented.
-
-### Outcome
-This week helped establish the baseline security problems in the application and created a clear starting point for the security improvements that followed.
-
----
-
-## Week 2: Security Fixes and Hardening
-
-In the second week, I implemented security improvements to protect the application from common vulnerabilities.
-
-### Security Measures Applied
-
-#### 1. Input Validation
-- Added email validation using the `validator` library.
-- Rejected invalid or malicious input before processing.
-- Prevented malformed data from being stored or used in queries.
-
-#### 2. Password Hashing
-- Used `bcrypt` to hash passwords before saving them to the database.
-- Added secure password comparison during login.
-- Prevented plaintext password storage.
-
-#### 3. Token-Based Authentication
-- Added basic JWT authentication using `jsonwebtoken`.
-- Generated tokens after successful signup and login.
-- Used token-based authentication to improve access control.
-
-#### 4. HTTP Security Headers
-- Added `helmet` middleware to secure HTTP headers.
-- Improved protection against common browser-based attacks.
-
-### Outcome
-By the end of Week 2, the application was significantly more secure. The most important weaknesses from Week 1 were addressed, and the system was better protected against unauthorized access, injection attacks, and insecure password handling.
+- **Logging**
+  - `winston` logs security events (login attempts, lockouts, CORS violations, rate limits) to console and `security.log`.
 
 ---
 
-## Week 3: Advanced Security and Final Reporting
-
-In the final week, I performed penetration testing, set up logging, and created a security checklist to document the application’s protection measures.
-
-### 1. Basic Penetration Testing
-I tested the application to simulate common attack scenarios.
-
-### Tests Performed
-- Attempted unauthorized access to protected pages.
-- Tested broken authentication with incorrect credentials.
-- Checked for session and token manipulation.
-- Tested malicious input such as invalid emails and weak passwords.
-- Verified whether injection-style payloads were blocked.
-
-### Result
-The application successfully resisted these basic attack attempts due to the security improvements applied in Week 2.
-
-### 2. Basic Logging
-I added logging using the `winston` library to monitor activity and support security auditing.
-
-### Logging Features
-- Console logging for real-time monitoring.
-- File logging for persistent security records.
-- Tracking of login attempts, registration events, profile updates, and errors.
-
-### Example Logging Setup
-```javascript
-const winston = require('winston');
-
-const logger = winston.createLogger({
-  transports: [
-    new winston.transports.Console(),
-    new winston.transports.File({ filename: 'security.log' })
-  ]
-});
-
-logger.info(`Login attempt by ${username} at ${new Date().toISOString()}`);
-```
-
-### Result
-The logging system made it easier to detect unusual behavior and review security-related events.
-
-### 3. Security Checklist
-I created a checklist of best practices to summarize the final state of the application.
-
-### Checklist
-- Validate all inputs.
-- Hash and salt passwords before storage.
-- Use token-based authentication for protected routes.
-- Apply Helmet for secure headers.
-- Use HTTPS for encrypted communication.
-- Avoid exposing sensitive data in error messages.
-- Maintain logs for security monitoring and auditing.
-
-### HTTPS Example
-```javascript
-const https = require('https');
-const fs = require('fs');
-
-const httpsOptions = {
-  key: fs.readFileSync('key.pem'),
-  cert: fs.readFileSync('cert.pem')
-};
-
-const httpsServer = https.createServer(httpsOptions, app);
-
-httpsServer.listen(8443, () => {
-  console.log("HTTPS Server Listening on port 8443");
-});
-```
-
-### Outcome
-Week 3 focused on validation, monitoring, and documentation. It confirmed that the application was no longer in its vulnerable state and had been improved with stronger security controls.
+## **Key Files Changed**
+- `server.js` — CORS, Helmet (CSP/HSTS), rate limiters, session config, dotenv.
+- `models/User.js` — IDS fields & helper methods.
+- `routes/auth.js` — lockout enforcement, logging, error codes.
+- `middleware/apiKey.js` — API key validation.
+- `routes/api.js` — protected example endpoint.
 
 ---
 
-## Tools and Technologies Used
-
-- Node.js
-- Express.js
-- MongoDB
-- Mongoose
-- bcrypt
-- validator
-- jsonwebtoken
-- helmet
-- winston
+## **Environment Variables**
+- `NODE_ENV` (development|production)  
+- `MONGO_URI`  
+- `JWT_SECRET`  
+- `SESSION_SECRET`  
+- `SESSION_NAME`  
+- `CORS_ORIGINS` (comma-separated)  
+- `API_KEYS` (comma-separated)  
+- `API_RATE_LIMIT`, `AUTH_RATE_LIMIT`, `LOGIN_WINDOW_MS`, `MAX_LOGIN_ATTEMPTS`
 
 ---
 
-## Overall Outcome
-
-This internship covered the full security improvement lifecycle of a web application:
-
-- **Week 1:** Identified vulnerabilities in the original app.
-- **Week 2:** Applied fixes such as validation, hashing, authentication, and security headers.
-- **Week 3:** Tested the security controls, added logging, and documented best practices.
-
-The final application is more secure, better monitored, and more suitable for real-world use than the original vulnerable version.
+## **Testing & Validation**
+- Manual tests:
+  - Signup/login success and token issuance.
+  - Trigger auth limiter: expect `429` then blocked requests.
+  - Trigger IDS: 5 failed logins → `423 Locked`.
+  - Protected API: valid `x-api-key` returns `200`, invalid returns `403`.
+- Dev vs Prod:
+  - Confirm `NODE_ENV` toggles CSP/HSTS and CORS behavior.
 
 ---
 
-## Conclusion
+## **Outcome**
+Implemented layered defenses against brute-force and automated abuse while keeping development ergonomics. Audit logs provide visibility for suspicious activity and support incident response.
 
-This internship helped me understand how vulnerable web applications can be analyzed, secured, tested, and documented. I gained practical experience in web security, authentication, password protection, logging, and basic penetration testing.
+---
 
-The project successfully demonstrated the importance of secure development practices and showed how incremental fixes can transform a vulnerable application into a more resilient system.
+## **Next Steps**
+- Harden CSP for production and remove relaxed dev exceptions.
+- Rotate secrets and ensure `.env` is excluded from source control.
+- Add automated tests for lockout and rate-limiting behavior.
+- Monitor `security.log` in production and configure alerting.
+
+---
+
+## **Conclusion**
+Week 4 delivered practical, layered security improvements that reduce the attack surface against credential stuffing, brute force, and programmatic abuse, and added observability to detect and respond to incidents.onstrated the importance of secure development practices and showed how incremental fixes can transform a vulnerable application into a more resilient system.
