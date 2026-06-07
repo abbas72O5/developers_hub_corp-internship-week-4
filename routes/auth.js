@@ -6,6 +6,8 @@ const jwt = require('jsonwebtoken');
 const logger = require('../logger');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const MAX_LOGIN_ATTEMPTS = 5;
 
 function escapeHtml(value = '') {
     return String(value)
@@ -162,10 +164,28 @@ router.post('/login', async (req, res) => {
 
         const user = await User.findOne({ email });
 
+        if (user && user.isLoginLocked()) {
+            logger.warn(`Locked account login attempt for email: ${email} from IP: ${req.ip}`);
+            return res.status(423).send(renderPage('Log In', '<h1>Log in</h1><p class="error">This account is temporarily locked due to too many failed login attempts. Try again later.</p><p><a href="/login">Try again</a></p>'));
+        }
+
         if (!user || !(await user.comparePassword(password))) {
+            if (user) {
+                user.registerFailedLogin(LOGIN_WINDOW_MS, MAX_LOGIN_ATTEMPTS);
+                await user.save();
+
+                if (user.isLoginLocked()) {
+                    logger.warn(`Account locked after repeated failed login attempts for email: ${email} from IP: ${req.ip}`);
+                    return res.status(423).send(renderPage('Log In', '<h1>Log in</h1><p class="error">Too many failed attempts. This account has been temporarily locked.</p><p><a href="/login">Try again later</a></p>'));
+                }
+            }
+
             logger.warn(`Failed login attempt for email: ${email} from IP: ${req.ip}`);
             return res.status(401).send(renderPage('Log In', '<h1>Log in</h1><p class="error">Invalid email or password.</p><p><a href="/login">Try again</a></p>'));
         }
+
+        user.clearLoginFailures();
+        await user.save();
 
         // Generate JWT token
         const token = jwt.sign({ id: user._id }, JWT_SECRET);

@@ -11,6 +11,18 @@ const userSchema = new mongoose.Schema({
     password: {
         type: String,
         required: true
+    },
+    failedLoginAttempts: {
+        type: Number,
+        default: 0
+    },
+    lastFailedLoginAt: {
+        type: Date,
+        default: null
+    },
+    lockUntil: {
+        type: Date,
+        default: null
     }
 }, {
     timestamps: true
@@ -29,6 +41,30 @@ userSchema.pre('save', async function() {
         throw error;
     }
 });
+
+userSchema.methods.isLoginLocked = function() {
+    return Boolean(this.lockUntil && this.lockUntil.getTime() > Date.now());
+};
+
+userSchema.methods.registerFailedLogin = function(windowMs, maxAttempts) {
+    const now = Date.now();
+    const lastAttempt = this.lastFailedLoginAt ? this.lastFailedLoginAt.getTime() : 0;
+    const withinWindow = now - lastAttempt <= windowMs;
+
+    this.failedLoginAttempts = withinWindow ? this.failedLoginAttempts + 1 : 1;
+    this.lastFailedLoginAt = new Date(now);
+
+    if (this.failedLoginAttempts >= maxAttempts) {
+        this.lockUntil = new Date(now + windowMs);
+        this.failedLoginAttempts = 0;
+    }
+};
+
+userSchema.methods.clearLoginFailures = function() {
+    this.failedLoginAttempts = 0;
+    this.lastFailedLoginAt = null;
+    this.lockUntil = null;
+};
 
 // Method to compare passwords
 userSchema.methods.comparePassword = async function(password) {

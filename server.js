@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const express = require('express');
 const mongoose = require('mongoose');
 const session = require('express-session');
@@ -17,22 +19,29 @@ if (process.env.NODE_ENV === 'production') {
     app.set('trust proxy', 1);
 }
 
-// Security Middleware
-app.use(helmet());
-
-// Content Security Policy - basic strong defaults
-app.use(
-    helmet.contentSecurityPolicy({
-        directives: {
-            defaultSrc: ["'self'"],
-            scriptSrc: ["'self'"],
-            styleSrc: ["'self'"],
-            imgSrc: ["'self'", 'data:'],
-            connectSrc: ["'self'"],
-            frameAncestors: ["'none'"],
-        }
-    })
-);
+// Security Middleware - development-friendly configuration
+if (process.env.NODE_ENV === 'production') {
+    // Production: strict security
+    app.use(helmet());
+    app.use(
+        helmet.contentSecurityPolicy({
+            directives: {
+                defaultSrc: ["'self'"],
+                scriptSrc: ["'self'"],
+                styleSrc: ["'self'"],
+                imgSrc: ["'self'", 'data:'],
+                connectSrc: ["'self'"],
+                frameAncestors: ["'none'"],
+            }
+        })
+    );
+} else {
+    // Development: relaxed for easier debugging
+    app.use(helmet({
+        contentSecurityPolicy: false,
+        hsts: false
+    }));
+}
 
 // Enable HSTS in production only
 if (process.env.NODE_ENV === 'production') {
@@ -40,17 +49,34 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 // Middleware
-const corsOrigins = process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : ['http://localhost:3000'];
-const corsOptions = {
-    origin: function (origin, callback) {
-        if (!origin) return callback(null, true); // allow non-browser tools
-        if (corsOrigins.indexOf(origin) !== -1) {
-            return callback(null, true);
-        }
-        return callback(new Error('CORS policy violation'));
-    },
-    optionsSuccessStatus: 200,
-};
+const corsOrigins = process.env.CORS_ORIGINS 
+    ? process.env.CORS_ORIGINS.split(',').map(o => o.trim()).filter(Boolean)
+    : ['http://localhost:3000', 'http://localhost:3001', 'http://127.0.0.1:3000'];
+
+// Middleware - CORS configuration
+let corsOptions;
+if (process.env.NODE_ENV === 'production') {
+    // Production: strict whitelist
+    corsOptions = {
+        origin: function (origin, callback) {
+            if (!origin) return callback(null, true);
+            if (corsOrigins.indexOf(origin) !== -1) {
+                return callback(null, true);
+            }
+            logger.warn(`CORS policy violation from origin: ${origin}`);
+            return callback(new Error('CORS policy violation'));
+        },
+        credentials: true,
+        optionsSuccessStatus: 200
+    };
+} else {
+    // Development: allow all origins
+    corsOptions = {
+        origin: '*',
+        credentials: false,
+        optionsSuccessStatus: 200
+    };
+}
 
 app.use(cors(corsOptions));
 app.use(express.json());
